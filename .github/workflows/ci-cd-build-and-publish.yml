@@ -58,22 +58,22 @@ jobs:
 
           # Crear bloque HTML con info del build
           cat <<EOF > "$TMP_BLOCK"
-<!-- BUILD_INFO -->
-<p>Build: $BUILD_TS</p>
-<p>SHA: $BUILD_SHA</p>
-<p>Image: $BUILD_TAG</p>
-<!-- END_BUILD_INFO -->
-EOF
+          <!-- BUILD_INFO -->
+          <p>Build: $BUILD_TS</p>
+          <p>SHA: $BUILD_SHA</p>
+          <p>Image: $BUILD_TAG</p>
+          <!-- END_BUILD_INFO -->
+          EOF
 
           # Si no existe index.html, crearlo
           if [ ! -f "$SITE_INDEX" ]; then
             cat <<EOF > "$SITE_INDEX"
-<html>
-  <body>
-$(cat "$TMP_BLOCK")
-  </body>
-</html>
-EOF
+            <html>
+              <body>
+            $(cat "$TMP_BLOCK")
+              </body>
+            </html>
+            EOF
             exit 0
           fi
 
@@ -84,7 +84,6 @@ EOF
               d
             }" "$SITE_INDEX"
           else
-            # Si no existe, insertarlo antes de </body>
             sed -i "/<\/body>/{
               r $TMP_BLOCK
             }" "$SITE_INDEX"
