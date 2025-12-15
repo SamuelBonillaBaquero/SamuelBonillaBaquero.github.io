@@ -58,7 +58,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build_and_push # Se ejecuta solo si el anterior tiene éxito
 
-    # 🔗 Pasamos datos importantes del job anterior para usarlos aquí
     steps:
       - name: Checkout repository for file modification
         # CRÍTICO: Las credenciales son necesarias para el commit posterior
@@ -71,7 +70,7 @@ jobs:
           # Variables de tiempo y SHA
           BUILD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           BUILD_SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-8)
-          
+
           # Variables de imagen
           IMAGE_NAME_FULL="ghcr.io/samuelbonillabaquero/mi-web-samuelbonilla"
           BUILD_TAG="${IMAGE_NAME_FULL}:${BUILD_SHA_SHORT}"
@@ -116,14 +115,15 @@ EOF
 </html>
 EOF
           elif grep -q "" "$SITE_INDEX"; then
+            # Reemplazar el bloque existente
             echo "Bloque BUILD_INFO encontrado. Reemplazando..."
             sed -i "//,//{
 r $TMP_BLOCK
 d
 }" "$SITE_INDEX"
           else
+            # Insertar el bloque antes de </body>
             echo "Bloque BUILD_INFO no encontrado. Insertando antes de </body>..."
-            # El uso de 'r $TMP_BLOCK' necesita estar en líneas separadas o con saltos de línea correctos
             sed -i "/<\/body>/{
 r $TMP_BLOCK
 }" "$SITE_INDEX"
@@ -138,4 +138,3 @@ r $TMP_BLOCK
           branch: main
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
-          # push_options: '--force' # Quitado, rara vez es necesario y puede causar problemas
