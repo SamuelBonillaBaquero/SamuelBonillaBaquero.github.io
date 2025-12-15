@@ -38,7 +38,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./Dockerfile            # <- ajusta la ruta al Dockerfile del proyecto (por ejemplo ./nginx/Dockerfile)
+          file: ./Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_NAME }}:latest
@@ -65,13 +65,16 @@ jobs:
           # Inserta (o reemplaza) un párrafo con la info de build
           # Usamos una marca HTML <!-- BUILD_INFO --> para localizar dónde insertar
           BUILD_BLOCK="<p>Build: $BUILD_TS - SHA: $BUILD_SHA - Image: $BUILD_TAG</p>"
+          
+          # CORRECCIÓN PRINCIPAL: Usar sed en lugar de perl para evitar errores de flags
           # Si existe la marca, reemplázala; si no, añade al final
           if grep -q "<!-- BUILD_INFO -->" "$SITE_INDEX"; then
-            perl -0777 -pe "s/<!-- BUILD_INFO -->.*<!-- END_BUILD_INFO -->/<!-- BUILD_INFO -->\n$BUILD_BLOCK\n<!-- END_BUILD_INFO -->/s" -i "$SITE_INDEX"
+            # Reemplazar contenido entre las marcas
+            sed -i '/<!-- BUILD_INFO -->/,/<!-- END_BUILD_INFO -->/c<!-- BUILD_INFO -->\n'"$BUILD_BLOCK"'\n<!-- END_BUILD_INFO -->' "$SITE_INDEX"
           else
             # Añadir antes de cierre de body si existe
             if grep -q "</body>" "$SITE_INDEX"; then
-              perl -0777 -pe "s|</body>|<!-- BUILD_INFO -->\n$BUILD_BLOCK\n<!-- END_BUILD_INFO -->\n</body>|s" -i "$SITE_INDEX"
+              sed -i 's|</body>|<!-- BUILD_INFO -->\n'"$BUILD_BLOCK"'\n<!-- END_BUILD_INFO -->\n</body>|' "$SITE_INDEX"
             else
               echo -e "\n<!-- BUILD_INFO -->\n$BUILD_BLOCK\n<!-- END_BUILD_INFO -->" >> "$SITE_INDEX"
             fi
@@ -85,4 +88,3 @@ jobs:
           branch: main
           author_name: github-actions[bot]
           author_email: 41898282+github-actions[bot]@users.noreply.github.com
-          # By default this action uses GITHUB_TOKEN so it won't re-trigger this workflow
