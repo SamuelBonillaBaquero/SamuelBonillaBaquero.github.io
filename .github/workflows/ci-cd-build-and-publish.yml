@@ -15,8 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      IMAGE_NAME: ghcr.io/samuelbonillabaquero/mi-web-SamuelBonillaBaquero
-
+      IMAGE_NAME: ghcr.io/samuelbonillabaquero/mi-web-samuelbonilla
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
