@@ -5,10 +5,11 @@ on:
     branches:
       - main
 
+# 🔑 Permisos: CRÍTICO para que el GITHUB_TOKEN pueda hacer push al repo y subir paquetes.
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+  contents: write # Necesario para hacer el commit y push de index.html
+  packages: write # Necesario para subir la imagen a GHCR
+  id-token: write # Buena práctica para OIDC/seguridad
 
 jobs:
   # 1. Job: Construir y Subir la Imagen Docker
@@ -23,8 +24,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Define el SHA corto (8 caracteres)
       - name: Set GITHUB_SHA_SHORT
-        run: echo "GITHUB_SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_ENV
+        id: set_sha_short
+        run: echo "GITHUB_SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_OUTPUT # Usamos GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -42,9 +45,10 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          # Usamos la salida del paso anterior
           tags: |
             ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ env.GITHUB_SHA_SHORT }}
+            ${{ env.IMAGE_NAME }}:${{ steps.set_sha_short.outputs.GITHUB_SHA_SHORT }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -52,24 +56,34 @@ jobs:
   update_site:
     name: Update Site Index
     runs-on: ubuntu-latest
-    needs: build_and_push
+    needs: build_and_push # Se ejecuta solo si el anterior tiene éxito
 
-    env:
-      IMAGE_NAME: ghcr.io/samuelbonillabaquero/mi-web-samuelbonilla
-
+    # 🔗 Pasamos datos importantes del job anterior para usarlos aquí
     steps:
-      - name: Checkout repository
+      - name: Checkout repository for file modification
+        # CRÍTICO: Las credenciales son necesarias para el commit posterior
         uses: actions/checkout@v4
         with:
           persist-credentials: true
 
       - name: Set Build Environment Variables
         run: |
-          echo "BUILD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_ENV
-          echo "BUILD_SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_ENV
-          echo "BUILD_TAG=${IMAGE_NAME}:$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_ENV
+          # Variables de tiempo y SHA
+          BUILD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          BUILD_SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-8)
+          
+          # Variables de imagen
+          IMAGE_NAME_FULL="ghcr.io/samuelbonillabaquero/mi-web-samuelbonilla"
+          BUILD_TAG="${IMAGE_NAME_FULL}:${BUILD_SHA_SHORT}"
+
+          # Exportar para el siguiente paso
+          echo "BUILD_TS=$BUILD_TS" >> $GITHUB_ENV
+          echo "BUILD_SHA_SHORT=$BUILD_SHA_SHORT" >> $GITHUB_ENV
+          echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
+          echo "IMAGE_NAME=$IMAGE_NAME_FULL" >> $GITHUB_ENV # Aseguramos la variable aquí también
 
       - name: Update index.html with build info
+        # Usamos las variables exportadas a GITHUB_ENV
         run: |
           SITE_INDEX=index.html
           TMP_BLOCK=/tmp/build_block.html
@@ -79,14 +93,14 @@ jobs:
 <div id="build-info" style="font-size: 0.8em; color: #666; padding: 10px; border-top: 1px solid #eee;">
   <p><strong>Último Build CI:</strong></p>
   <ul>
-    <li>Fecha: $BUILD_TS</li>
-    <li>SHA: $BUILD_SHA_SHORT</li>
-    <li>Imagen: $BUILD_TAG</li>
+    <li>Fecha: ${{ env.BUILD_TS }}</li>
+    <li>SHA: ${{ env.BUILD_SHA_SHORT }}</li>
+    <li>Imagen: ${{ env.BUILD_TAG }}</li>
   </ul>
 </div>
 EOF
 
-          # 2. Si no existe index.html, crearlo
+          # 2. Lógica para crear o reemplazar el bloque HTML
           if [ ! -f "$SITE_INDEX" ]; then
             echo "index.html no encontrado. Creando nuevo..."
             cat <<EOF > "$SITE_INDEX"
@@ -101,11 +115,7 @@ EOF
   </body>
 </html>
 EOF
-            exit 0
-          fi
-
-          # 3. Reemplazar o Insertar el bloque
-          if grep -q "" "$SITE_INDEX"; then
+          elif grep -q "" "$SITE_INDEX"; then
             echo "Bloque BUILD_INFO encontrado. Reemplazando..."
             sed -i "//,//{
 r $TMP_BLOCK
@@ -113,12 +123,14 @@ d
 }" "$SITE_INDEX"
           else
             echo "Bloque BUILD_INFO no encontrado. Insertando antes de </body>..."
+            # El uso de 'r $TMP_BLOCK' necesita estar en líneas separadas o con saltos de línea correctos
             sed -i "/<\/body>/{
 r $TMP_BLOCK
 }" "$SITE_INDEX"
           fi
 
       - name: Commit and push changes to main (if any)
+        # ⚠️ CRÍTICO: El commit solo ocurrirá si el archivo index.html ha cambiado.
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "ci: update site info with build ${{ env.BUILD_TS }} (${{ env.BUILD_SHA_SHORT }})"
@@ -126,4 +138,4 @@ r $TMP_BLOCK
           branch: main
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
-          push_options: '--force'
+          # push_options: '--force' # Quitado, rara vez es necesario y puede causar problemas
