@@ -27,7 +27,7 @@ jobs:
       # Define el SHA corto (8 caracteres)
       - name: Set GITHUB_SHA_SHORT
         id: set_sha_short
-        run: echo "GITHUB_SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_OUTPUT # Usamos GITHUB_OUTPUT
+        run: echo "GITHUB_SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -70,36 +70,38 @@ jobs:
           # Variables de tiempo y SHA
           BUILD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           BUILD_SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-8)
-
           # Variables de imagen
           IMAGE_NAME_FULL="ghcr.io/samuelbonillabaquero/mi-web-samuelbonilla"
           BUILD_TAG="${IMAGE_NAME_FULL}:${BUILD_SHA_SHORT}"
-
           # Exportar para el siguiente paso
           echo "BUILD_TS=$BUILD_TS" >> $GITHUB_ENV
           echo "BUILD_SHA_SHORT=$BUILD_SHA_SHORT" >> $GITHUB_ENV
           echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
-          echo "IMAGE_NAME=$IMAGE_NAME_FULL" >> $GITHUB_ENV # Aseguramos la variable aquí también
+          echo "IMAGE_NAME=$IMAGE_NAME_FULL" >> $GITHUB_ENV
 
       - name: Update index.html with build info
-        # Usamos las variables exportadas a GITHUB_ENV
         run: |
           SITE_INDEX=index.html
           TMP_BLOCK=/tmp/build_block.html
-
+          
           # 1. Crear bloque HTML con info del build
-          cat <<EOF > "$TMP_BLOCK"
+          cat << 'EOF' > "$TMP_BLOCK"
 <div id="build-info" style="font-size: 0.8em; color: #666; padding: 10px; border-top: 1px solid #eee;">
   <p><strong>Último Build CI:</strong></p>
   <ul>
-    <li>Fecha: ${{ env.BUILD_TS }}</li>
-    <li>SHA: ${{ env.BUILD_SHA_SHORT }}</li>
-    <li>Imagen: ${{ env.BUILD_TAG }}</li>
+    <li>Fecha: $BUILD_TS</li>
+    <li>SHA: $BUILD_SHA_SHORT</li>
+    <li>Imagen: $BUILD_TAG</li>
   </ul>
 </div>
 EOF
+          
+          # 2. Reemplazar variables en el template
+          sed -i "s/\$BUILD_TS/$BUILD_TS/g" "$TMP_BLOCK"
+          sed -i "s/\$BUILD_SHA_SHORT/$BUILD_SHA_SHORT/g" "$TMP_BLOCK"
+          sed -i "s|\$BUILD_TAG|$BUILD_TAG|g" "$TMP_BLOCK"
 
-          # 2. Lógica para crear o reemplazar el bloque HTML
+          # 3. Lógica para crear o reemplazar el bloque HTML
           if [ ! -f "$SITE_INDEX" ]; then
             echo "index.html no encontrado. Creando nuevo..."
             cat <<EOF > "$SITE_INDEX"
@@ -114,23 +116,25 @@ EOF
   </body>
 </html>
 EOF
-          elif grep -q "" "$SITE_INDEX"; then
+          elif grep -q '<div id="build-info"' "$SITE_INDEX"; then
             # Reemplazar el bloque existente
             echo "Bloque BUILD_INFO encontrado. Reemplazando..."
-            sed -i "//,//{
-r $TMP_BLOCK
-d
-}" "$SITE_INDEX"
+            # Crear un archivo temporal para el nuevo contenido
+            TMP_FILE=$(mktemp)
+            awk 'BEGIN {RS="\0"; ORS=""} {print gensub(/<div id="build-info"[^>]*>.*<\/div>/s, "'"$(cat "$TMP_BLOCK" | sed ':a;N;$!ba;s/\n/\\n/g')"'", "g")}' "$SITE_INDEX" > "$TMP_FILE"
+            mv "$TMP_FILE" "$SITE_INDEX"
           else
             # Insertar el bloque antes de </body>
             echo "Bloque BUILD_INFO no encontrado. Insertando antes de </body>..."
-            sed -i "/<\/body>/{
-r $TMP_BLOCK
-}" "$SITE_INDEX"
+            if grep -q '</body>' "$SITE_INDEX"; then
+              sed -i '/<\/body>/i'"$(cat "$TMP_BLOCK" | sed ':a;N;$!ba;s/\n/\\n/g')" "$SITE_INDEX"
+            else
+              # Si no hay </body>, añadirlo al final
+              cat "$TMP_BLOCK" >> "$SITE_INDEX"
+            fi
           fi
 
       - name: Commit and push changes to main (if any)
-        # ⚠️ CRÍTICO: El commit solo ocurrirá si el archivo index.html ha cambiado.
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "ci: update site info with build ${{ env.BUILD_TS }} (${{ env.BUILD_SHA_SHORT }})"
