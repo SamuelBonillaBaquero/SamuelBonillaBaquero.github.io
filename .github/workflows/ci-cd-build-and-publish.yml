@@ -6,9 +6,9 @@ on:
       - main
 
 permissions:
-  contents: write      # necesario para hacer commit en el repo
-  packages: write      # para publicar en GHCR
-  id-token: write      # opcional (OIDC)
+  contents: write
+  packages: write
+  id-token: write
 
 jobs:
   build-and-push:
@@ -16,13 +16,13 @@ jobs:
 
     env:
       IMAGE_NAME: ghcr.io/samuelbonillabaquero/mi-web-samuelbonilla
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           persist-credentials: true
 
-      # ❌ QEMU eliminado (no usas multi-arch)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
@@ -54,28 +54,40 @@ jobs:
       - name: Update index.html with build info
         run: |
           SITE_INDEX=index.html
+          TMP_BLOCK=/tmp/build_block.html
 
-          BUILD_BLOCK="<!-- BUILD_INFO -->
-          <p>Build: $BUILD_TS - SHA: $BUILD_SHA - Image: $BUILD_TAG</p>
-          <!-- END_BUILD_INFO -->"
+          # Crear bloque HTML con info del build
+          cat <<EOF > "$TMP_BLOCK"
+<!-- BUILD_INFO -->
+<p>Build: $BUILD_TS</p>
+<p>SHA: $BUILD_SHA</p>
+<p>Image: $BUILD_TAG</p>
+<!-- END_BUILD_INFO -->
+EOF
 
+          # Si no existe index.html, crearlo
           if [ ! -f "$SITE_INDEX" ]; then
             cat <<EOF > "$SITE_INDEX"
-          <html>
-            <body>
-              $BUILD_BLOCK
-            </body>
-          </html>
-          EOF
+<html>
+  <body>
+$(cat "$TMP_BLOCK")
+  </body>
+</html>
+EOF
             exit 0
           fi
 
+          # Si ya existe el bloque, reemplazarlo
           if grep -q "<!-- BUILD_INFO -->" "$SITE_INDEX"; then
-            sed -i "/<!-- BUILD_INFO -->/,/<!-- END_BUILD_INFO -->/c\\
-          $BUILD_BLOCK" "$SITE_INDEX"
+            sed -i "/<!-- BUILD_INFO -->/,/<!-- END_BUILD_INFO -->/{
+              r $TMP_BLOCK
+              d
+            }" "$SITE_INDEX"
           else
-            sed -i "/<\/body>/i\\
-          $BUILD_BLOCK" "$SITE_INDEX"
+            # Si no existe, insertarlo antes de </body>
+            sed -i "/<\/body>/{
+              r $TMP_BLOCK
+            }" "$SITE_INDEX"
           fi
 
       - name: Commit and push changes to main (if any)
@@ -86,4 +98,3 @@ jobs:
           branch: main
           author_name: github-actions[bot]
           author_email: 41898282+github-actions[bot]@users.noreply.github.com
-
